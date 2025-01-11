@@ -9,6 +9,7 @@ local setmetatable   = setmetatable;
 
 local create         = coroutine.create;
 local resume         = coroutine.resume;
+local status         = coroutine.status;
 local yield          = coroutine.yield;
 
 local floor          = math.floor;
@@ -27,6 +28,9 @@ local TaskMT = {
 	end,
 };
 
+local FPS        = 60;
+
+local Index      = 1;
 local Current    = {};
 local Scheduled  = Buffer();
 local Parallel   = List();
@@ -51,15 +55,19 @@ local function CreateMapTaskData(Param)
 	local FirstTime = UseTime and (Param.Time or Current.LastTime);
 	local LastBeat  = UseBeat and (GetLast(Param, FirstBeat) or FirstBeat);
 	local LastTime  = UseTime and (GetLast(Param, FirstTime) or FirstTime);
-	NewParam.UnitType  = UnitType;
-	NewParam.FirstBeat = UseBeat and FirstBeat or TimingData.GetBeatFromElapsedTimeNoOffset(FirstTime);
-	NewParam.FirstTime = UseTime and FirstTime or TimingData.GetElapsedTimeFromBeatNoOffset(FirstBeat);
-	NewParam.LastBeat  = UseBeat and LastBeat or TimingData.GetBeatFromElapsedTimeNoOffset(LastTime);
-	NewParam.LastTime  = UseTime and LastTime or TimingData.GetElapsedTimeFromBeatNoOffset(LastBeat);
+	NewParam.Index      = Index;
+	NewParam.UnitType   = UnitType;
+	NewParam.FirstBeat  = UseBeat and FirstBeat or TimingData.GetBeatFromElapsedTimeNoOffset(FirstTime);
+	NewParam.FirstTime  = UseTime and FirstTime or TimingData.GetElapsedTimeFromBeatNoOffset(FirstBeat);
+	NewParam.LastBeat   = UseBeat and LastBeat or TimingData.GetBeatFromElapsedTimeNoOffset(LastTime);
+	NewParam.LastTime   = UseTime and LastTime or TimingData.GetElapsedTimeFromBeatNoOffset(LastBeat);
+	NewParam.FirstFrame = floor(NewParam.FirstTime * FPS + 0.5);
+	NewParam.LastFrame  = floor(NewParam.LastTime  * FPS + 0.5);
 	NewParam.Args = {};
 	for i = 1, #Param do
 		NewParam.Args[i] = Param[i];
 	end
+	Index   = Index + 1;
 	Current = NewParam;
 	return NewParam;
 end
@@ -86,26 +94,26 @@ function Task.Update(Children, DeltaTime)
 	local CurrentTime = GetMusicSecondsVisible();
 	for data, node in Parallel:forwards() do
 		local state = resume(data, Children, DeltaTime, CurrentBeat, CurrentTime, floor(TotalFrame));
-		if not state then
+		if not state or status(data) == "dead" then
 			Parallel:remove(node);
 		end
 	end
-	TotalFrame = TotalFrame + DeltaTime * 60;
+	TotalFrame = TotalFrame + DeltaTime * FPS;
 end
 
 function Task.Interval(Callback, Param)
 	local Children;
 	local DeltaTime;
-	local CurrentBeat;
-	local CurrentTime;
-	local Frame;
-	local FirstBeat  = Param.FirstBeat;
-	local FirstTime  = Param.FirstTime;
-	local LastBeat   = Param.LastBeat;
-	local LastTime   = Param.LastTime;
-	local LengthBeat = LastBeat - FirstBeat;
-	local LengthTime = LastTime - FirstTime;
-	local Args       = Param.Args;
+	local CurrentBeat = GetSongBeatVisible();
+	local CurrentTime = GetMusicSecondsVisible();
+	local Frame       = TotalFrame;
+	local FirstBeat   = Param.FirstBeat;
+	local FirstTime   = Param.FirstTime;
+	local LastBeat    = Param.LastBeat;
+	local LastTime    = Param.LastTime;
+	local LengthBeat  = LastBeat - FirstBeat;
+	local LengthTime  = LastTime - FirstTime;
+	local Args        = Param.Args;
 	repeat
 		Children, DeltaTime, CurrentBeat, CurrentTime, Frame = yield();
 		if FirstTime < CurrentTime then
